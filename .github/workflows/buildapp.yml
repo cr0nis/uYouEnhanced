@@ -1,4 +1,4 @@
-# Original idea by @ISnackable. Thanks to him for handling the hardest parts!
+uses: actions/checkout@v4# Original idea by @ISnackable. Thanks to him for handling the hardest parts!
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
 
 name: Build and Release uYouEnhanced
@@ -75,6 +75,15 @@ jobs:
           path: main
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
+
+      - name: Force Update Submodules Manually
+        run: |
+          cd main
+          git submodule update --init --recursive
+
+      - name: Install Dependencies
+        run: |
+          brew install ldid dpkg make wget unzip jq pipx
 
       - name: Install Dependencies
         run: |
