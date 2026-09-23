@@ -44,7 +44,7 @@ on:
 
       upload_artifact:
         description: "Upload IPA as artifact"
-        default: false
+        default: true
         required: false
         type: boolean
 
@@ -83,7 +83,7 @@ jobs:
 
     steps:
       # ============================================================
-      # Checkout uYouEnhanced
+      # Checkout
       # ============================================================
 
       - name: Checkout Main
@@ -166,7 +166,7 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       # ============================================================
-      # Setup Theos
+      # Theos
       # ============================================================
 
       - name: Setup Theos
@@ -208,7 +208,7 @@ jobs:
           mv *.sdk "$THEOS/sdks"
 
       # ============================================================
-      # Setup Theos Jailed
+      # Theos Jailed
       # ============================================================
 
       - name: Setup Theos Jailed
@@ -224,7 +224,7 @@ jobs:
           ./theos-jailed/install
 
       # ============================================================
-      # Fix broken-pipe issues
+      # Theos broken-pipe workaround
       # ============================================================
 
       - name: Fix Theos broken pipe issue
@@ -288,7 +288,7 @@ jobs:
           echo "::add-mask::$URL_YT"
           echo "URL_YT=$URL_YT" >> "$GITHUB_ENV"
 
-      - name: Prepare YouTube iPA
+      - name: Prepare YouTube IPA
         id: prepare_youtube
         run: |
           set -euo pipefail
@@ -380,7 +380,7 @@ jobs:
           echo "Codec sources validated successfully."
 
       # ============================================================
-      # Build YTUHD codecs
+      # Build YTUHD codec libraries
       # ============================================================
 
       - name: Build YTUHD Codec Libraries
@@ -557,7 +557,7 @@ jobs:
           echo "YTUHD path patch complete."
 
       # ============================================================
-      # Confirm codec headers resolve with clang
+      # Verify YTUHD include paths
       # ============================================================
 
       - name: Verify YTUHD Include Paths
@@ -613,6 +613,10 @@ jobs:
 
       # ============================================================
       # Build package
+      #
+      # SIDELOAD=1 is important for YTUHD.
+      # It uses the bundled libundirect_compact implementation rather
+      # than trying to link the external "undirect" library.
       # ============================================================
 
       - name: Fix compiling & Build Package
@@ -646,6 +650,7 @@ jobs:
           echo "SDK=${{ inputs.sdk_version }}"
           echo "Bundle ID=${{ inputs.bundle_id }}"
           echo "App Name=${{ inputs.app_name }}"
+          echo "SIDELOAD=1"
           echo "YTUHD_ENABLED=${{ inputs.ytuhd && '1' || '0' }}"
           echo "SPONSORBLOCK_ENABLED=${{ inputs.sponsorblock && '1' || '0' }}"
 
@@ -667,15 +672,142 @@ jobs:
           echo "Build completed"
           echo "========================================"
 
-          PACKAGE_FILE="$(ls -t packages | head -n1)"
+          PACKAGE_FILE="$(ls -t packages/*.ipa 2>/dev/null | head -n1 || true)"
 
-          echo "Package: $PACKAGE_FILE"
-          echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
+          if [ -z "$PACKAGE_FILE" ]; then
+            echo "FATAL: No IPA was created in main/packages."
+            echo ""
+            echo "Contents of packages:"
+            ls -lah packages || true
+            exit 1
+          fi
+
+          PACKAGE_NAME="$(basename "$PACKAGE_FILE")"
+
+          echo "Package: $PACKAGE_NAME"
+          echo "Full path: $(pwd)/$PACKAGE_FILE"
+
+          echo "package=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_path=$(pwd)/$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "SHA256:"
+          shasum -a 256 "$PACKAGE_FILE"
         env:
           UYOU_VERSION: ${{ inputs.uyou_version }}
 
       # ============================================================
+      # Verify final IPA
+      # ============================================================
+
+      - name: Verify Final IPA
+        id: final_ipa
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Locating final IPA"
+          echo "========================================"
+
+          echo ""
+          echo "All IPA files in main/packages:"
+          find "$GITHUB_WORKSPACE/main/packages" \
+            -maxdepth 1 \
+            -type f \
+            -name "*.ipa" \
+            -print \
+            || true
+
+          IPA_FILE="$GITHUB_WORKSPACE/main/packages/${{ steps.build_package.outputs.package }}"
+
+          if [ ! -f "$IPA_FILE" ]; then
+            echo ""
+            echo "Expected IPA was not found:"
+            echo "$IPA_FILE"
+
+            echo ""
+            echo "Attempting fallback search..."
+
+            IPA_FILE="$(
+              find "$GITHUB_WORKSPACE/main/packages" \
+                -maxdepth 1 \
+                -type f \
+                -name "*.ipa" \
+                -print0 \
+                | xargs -0 ls -t \
+                | head -n1 \
+                || true
+            )"
+          fi
+
+          if [ -z "$IPA_FILE" ] || [ ! -f "$IPA_FILE" ]; then
+            echo "FATAL: No final IPA could be located."
+            exit 1
+          fi
+
+          IPA_NAME="$(basename "$IPA_FILE")"
+
+          echo ""
+          echo "Final IPA:"
+          echo "$IPA_FILE"
+
+          echo ""
+          echo "File information:"
+          ls -lh "$IPA_FILE"
+
+          echo ""
+          echo "SHA256:"
+          shasum -a 256 "$IPA_FILE"
+
+          echo "path=$IPA_FILE" >> "$GITHUB_OUTPUT"
+          echo "name=$IPA_NAME" >> "$GITHUB_OUTPUT"
+
+      # ============================================================
+      # Upload downloadable GitHub Actions artifact
+      #
+      # This is what makes the IPA appear at the bottom of the run.
+      # ============================================================
+
+      - name: Upload IPA Artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uYouEnhanced_${{ steps.prepare_youtube.outputs.youtube_version }}_${{ inputs.uyou_version }}_run-${{ github.run_number }}
+          path: ${{ steps.final_ipa.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      # ============================================================
+      # Optional draft GitHub release
+      # ============================================================
+
+      - name: Create Draft Release
+        if: ${{ inputs.create_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.prepare_youtube.outputs.youtube_version }}-${{ inputs.uyou_version }}-${{ github.run_number }}
+          name: uYouEnhanced ${{ steps.prepare_youtube.outputs.youtube_version }}-${{ inputs.uyou_version }} (Run ${{ github.run_number }})
+          draft: true
+          prerelease: false
+          generate_release_notes: false
+          files: ${{ steps.final_ipa.outputs.path }}
+          body: |
+            uYouEnhanced build
+
+            YouTube: ${{ steps.prepare_youtube.outputs.youtube_version }}
+            uYou: ${{ inputs.uyou_version }}
+            Bundle ID: ${{ inputs.bundle_id }}
+            YTUHD: ${{ inputs.ytuhd }}
+            iSponsorBlock: ${{ inputs.sponsorblock }}
+            GitHub Actions Run: ${{ github.run_number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ============================================================
       # Safari extension
+      #
+      # Kept from your existing workflow.
       # ============================================================
 
       - name: Clone Open in YouTube (Safari Extension)
