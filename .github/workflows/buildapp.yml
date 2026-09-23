@@ -658,6 +658,7 @@ jobs:
             THEOS_PACKAGE_SCHEME=rootless \
             IPA=Payload/YouTube.app \
             FINALPACKAGE=1 \
+            SIDELOAD=1 \
             YTUHD_ENABLED=${{ inputs.ytuhd && '1' || '0' }} \
             SPONSORBLOCK_ENABLED=${{ inputs.sponsorblock && '1' || '0' }}
 
