@@ -7,10 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       sdk_version:
-        description: "Build SDK version (not your device iOS version)"
-        default: "18.6"
+        description: "Build SDK version"
+        default: "26.5"
         required: true
-        type: string
+        type: choice
+        options:
+          - "18.6"
+          - "26.0"
+          - "26.1"
+          - "26.2"
+          - "26.3"
+          - "26.4"
+          - "26.4.1"
+          - "26.5"
 
       uyou_version:
         description: "uYou source version (3.0.4 becomes unofficial 3.0.5)"
@@ -146,9 +155,7 @@ jobs:
           path: |
             main/Tweaks/YTUHD/vendor/libvpx_ios
             main/Tweaks/YTUHD/vendor/dav1d_ios
-          key: >-
-            ytuhd-codecs-${{ runner.os }}-sdk-${{ inputs.sdk_version }}-${{
-            steps.ytuhd_versions.outputs.cache_key }}
+          key: ytuhd-codecs-${{ runner.os }}-sdk-${{ inputs.sdk_version }}-${{ steps.ytuhd_versions.outputs.cache_key }}
 
       # ============================================================
       # Core dependencies
@@ -367,9 +374,6 @@ jobs:
 
       # ============================================================
       # Resolve effective uYou version
-      #
-      # Current source package is 3.0.4 and the repository rebrands
-      # that binary as unofficial 3.0.5.
       # ============================================================
 
       - name: Resolve uYou Build Version
@@ -385,8 +389,8 @@ jobs:
             EFFECTIVE_VERSION="$SOURCE_VERSION"
           fi
 
-          echo "uYou source version:    $SOURCE_VERSION"
-          echo "uYou packaged version:  $EFFECTIVE_VERSION"
+          echo "uYou source version:   $SOURCE_VERSION"
+          echo "uYou packaged version: $EFFECTIVE_VERSION"
 
           echo "effective_version=$EFFECTIVE_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -478,9 +482,6 @@ jobs:
 
       # ============================================================
       # Fix YTUHD aggregate-build paths
-      #
-      # YTUHD assumes THEOS_PROJECT_DIR is the YTUHD directory when
-      # built standalone. uYouEnhanced builds it as a subproject.
       # ============================================================
 
       - name: Fix YTUHD Paths for Aggregate Build
@@ -625,12 +626,7 @@ jobs:
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v6
         with:
-          name: >-
-            uYouEnhanced_${{
-            steps.prepare_youtube.outputs.youtube_version
-            }}_${{
-            steps.uyou_version.outputs.effective_version
-            }}_run-${{ github.run_number }}
+          name: uYouEnhanced_${{ steps.prepare_youtube.outputs.youtube_version }}_${{ steps.uyou_version.outputs.effective_version }}_run-${{ github.run_number }}
           path: ${{ steps.final_ipa.outputs.path }}
           if-no-files-found: error
           retention-days: 30
@@ -644,26 +640,12 @@ jobs:
         if: ${{ inputs.create_release }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: >-
-            v${{
-            steps.prepare_youtube.outputs.youtube_version
-            }}-${{
-            steps.uyou_version.outputs.effective_version
-            }}-${{ github.run_number }}
-
-          name: >-
-            uYouEnhanced ${{
-            steps.prepare_youtube.outputs.youtube_version
-            }}-${{
-            steps.uyou_version.outputs.effective_version
-            }} (Run ${{ github.run_number }})
-
+          tag_name: v${{ steps.prepare_youtube.outputs.youtube_version }}-${{ steps.uyou_version.outputs.effective_version }}-${{ github.run_number }}
+          name: uYouEnhanced ${{ steps.prepare_youtube.outputs.youtube_version }}-${{ steps.uyou_version.outputs.effective_version }} (Run ${{ github.run_number }})
           draft: true
           prerelease: false
           generate_release_notes: false
-
           files: ${{ steps.final_ipa.outputs.path }}
-
           body: |
             uYouEnhanced build
 
