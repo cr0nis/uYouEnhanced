@@ -78,6 +78,9 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      THEOS: ${{ github.workspace }}/theos
+
     steps:
       # ============================================================
       # Checkout uYouEnhanced
@@ -92,7 +95,7 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # Initialize all submodules, including nested YTUHD codecs
+      # Initialize submodules
       # ============================================================
 
       - name: Initialize and Update Submodules
@@ -140,12 +143,12 @@ jobs:
 
       # ============================================================
       # Dependencies
-      #
-      # meson + ninja are required for dav1d.
       # ============================================================
 
       - name: Install Dependencies
         run: |
+          set -euo pipefail
+
           brew install \
             ldid \
             dpkg \
@@ -163,7 +166,7 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       # ============================================================
-      # Theos
+      # Setup Theos
       # ============================================================
 
       - name: Setup Theos
@@ -203,11 +206,9 @@ jobs:
           git checkout --quiet
 
           mv *.sdk "$THEOS/sdks"
-        env:
-          THEOS: ${{ github.workspace }}/theos
 
       # ============================================================
-      # Theos Jailed
+      # Setup Theos Jailed
       # ============================================================
 
       - name: Setup Theos Jailed
@@ -218,17 +219,19 @@ jobs:
           path: theos-jailed
 
       - name: Install Theos Jailed
-        run: ./theos-jailed/install
-        env:
-          THEOS: ${{ github.workspace }}/theos
+        run: |
+          set -euo pipefail
+          ./theos-jailed/install
 
       # ============================================================
-      # Existing broken-pipe workaround
+      # Fix broken-pipe issues
       # ============================================================
 
       - name: Fix Theos broken pipe issue
         run: |
           set -euo pipefail
+
+          echo "THEOS=$THEOS"
 
           find "$THEOS" -name "*.sh" -type f | while read -r SCRIPT; do
             if grep -q '| head' "$SCRIPT" 2>/dev/null; then
@@ -255,7 +258,7 @@ jobs:
           echo "Broken pipe fixes applied"
 
       # ============================================================
-      # cyan / tbd
+      # cyan and tbd
       # ============================================================
 
       - name: Install cyan and tbd
@@ -298,7 +301,6 @@ jobs:
           cd main
 
           mv YouTube.ipa YouTube.zip
-
           unzip -q YouTube.zip
 
           youtube_version=$(
@@ -315,7 +317,7 @@ jobs:
           YOUTUBE_URL: ${{ env.URL_YT }}
 
       # ============================================================
-      # Validate YTUHD source dependencies
+      # Validate YTUHD sources
       # ============================================================
 
       - name: Validate YTUHD Codec Sources
@@ -333,10 +335,8 @@ jobs:
           echo "YTUHD directory:"
           pwd
 
-          echo ""
-          echo "Checking libvpx header..."
-
           if [ ! -f "vendor/libvpx/vpx/vpx_decoder.h" ]; then
+            echo ""
             echo "libvpx header missing."
             echo "Retrying submodule initialization..."
 
@@ -344,10 +344,8 @@ jobs:
             git submodule update --init --recursive
           fi
 
-          echo ""
-          echo "Checking dav1d header..."
-
           if [ ! -f "vendor/dav1d/include/dav1d/dav1d.h" ]; then
+            echo ""
             echo "dav1d header missing."
             echo "Retrying submodule initialization..."
 
@@ -361,24 +359,12 @@ jobs:
           echo "========================================"
 
           test -f vendor/libvpx/vpx/vpx_decoder.h || {
-            echo "FATAL: Missing:"
-            echo "vendor/libvpx/vpx/vpx_decoder.h"
-
-            echo ""
-            echo "libvpx contents:"
-            find vendor/libvpx -maxdepth 3 -type f | head -100 || true
-
+            echo "FATAL: Missing vendor/libvpx/vpx/vpx_decoder.h"
             exit 1
           }
 
           test -f vendor/dav1d/include/dav1d/dav1d.h || {
-            echo "FATAL: Missing:"
-            echo "vendor/dav1d/include/dav1d/dav1d.h"
-
-            echo ""
-            echo "dav1d contents:"
-            find vendor/dav1d -maxdepth 4 -type f | head -100 || true
-
+            echo "FATAL: Missing vendor/dav1d/include/dav1d/dav1d.h"
             exit 1
           }
 
@@ -394,13 +380,7 @@ jobs:
           echo "Codec sources validated successfully."
 
       # ============================================================
-      # Build libvpx + dav1d explicitly
-      #
-      # The current YTUHD scripts produce:
-      #
-      # vendor/libvpx_ios/libvpx.a
-      # vendor/dav1d_ios/libdav1d.a
-      #
+      # Build YTUHD codecs
       # ============================================================
 
       - name: Build YTUHD Codec Libraries
@@ -439,11 +419,7 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-path
 
           echo ""
-          echo "iPhoneOS clang:"
-          xcrun --sdk iphoneos --find clang
-
-          echo ""
-          echo "Making build scripts executable..."
+          echo "Making codec build scripts executable..."
 
           chmod +x vendor/build_libvpx.sh
           chmod +x vendor/build_dav1d.sh
@@ -454,20 +430,12 @@ jobs:
           rm -rf vendor/libvpx_ios
           rm -rf vendor/dav1d_ios
 
-          # --------------------------------------------------------
-          # libvpx
-          # --------------------------------------------------------
-
           echo ""
           echo "========================================"
           echo "Building libvpx"
           echo "========================================"
 
           ./vendor/build_libvpx.sh
-
-          # --------------------------------------------------------
-          # dav1d
-          # --------------------------------------------------------
 
           echo ""
           echo "========================================"
@@ -476,27 +444,23 @@ jobs:
 
           ./vendor/build_dav1d.sh
 
-          # --------------------------------------------------------
-          # Validate build outputs
-          # --------------------------------------------------------
-
           echo ""
           echo "========================================"
           echo "Validating codec build outputs"
           echo "========================================"
 
           test -f vendor/libvpx_ios/libvpx.a || {
-            echo "FATAL: libvpx static library was not created."
+            echo "FATAL: libvpx.a was not created."
             exit 1
           }
 
           test -f vendor/dav1d_ios/libdav1d.a || {
-            echo "FATAL: dav1d static library was not created."
+            echo "FATAL: libdav1d.a was not created."
             exit 1
           }
 
           test -f vendor/dav1d_ios/install/include/dav1d/dav1d.h || {
-            echo "FATAL: dav1d installed headers were not created."
+            echo "FATAL: installed dav1d headers were not created."
             exit 1
           }
 
@@ -509,21 +473,16 @@ jobs:
           ls -lh vendor/dav1d_ios/libdav1d.a
 
           echo ""
-          echo "dav1d installed headers:"
+          echo "dav1d headers:"
           ls -la vendor/dav1d_ios/install/include/dav1d/
 
           echo ""
-          echo "========================================"
-          echo "Static library architecture information"
-          echo "========================================"
-
-          echo ""
-          echo "libvpx.a:"
+          echo "libvpx architecture:"
           lipo -info vendor/libvpx_ios/libvpx.a \
             || file vendor/libvpx_ios/libvpx.a
 
           echo ""
-          echo "libdav1d.a:"
+          echo "dav1d architecture:"
           lipo -info vendor/dav1d_ios/libdav1d.a \
             || file vendor/dav1d_ios/libdav1d.a
 
@@ -531,18 +490,7 @@ jobs:
           echo "YTUHD codec libraries built successfully."
 
       # ============================================================
-      # IMPORTANT:
-      #
-      # Fix YTUHD's paths when built as an aggregate/subproject.
-      #
-      # Upstream currently uses:
-      #
-      # $(THEOS_PROJECT_DIR)/vendor/...
-      #
-      # During uYouEnhanced aggregate builds, THEOS_PROJECT_DIR may
-      # resolve to the parent project.
-      #
-      # Define YTUHD_ROOT from the path of THIS Makefile instead.
+      # Fix YTUHD paths for aggregate Theos build
       # ============================================================
 
       - name: Fix YTUHD Paths for Aggregate Build
@@ -560,9 +508,6 @@ jobs:
           echo "Makefile before patch:"
           echo "----------------------------------------"
           cat Makefile
-
-          echo ""
-          echo "Adding YTUHD_ROOT..."
 
           python3 <<'PY'
           from pathlib import Path
@@ -589,9 +534,7 @@ jobs:
           cat Makefile
 
           echo ""
-          echo "========================================"
-          echo "Checking patched paths"
-          echo "========================================"
+          echo "Checking patched paths..."
 
           if grep -q '\$(THEOS_PROJECT_DIR)/vendor' Makefile; then
             echo "FATAL: Unpatched THEOS_PROJECT_DIR vendor paths remain."
@@ -602,9 +545,7 @@ jobs:
           grep -n 'YTUHD_ROOT' Makefile
 
           echo ""
-          echo "========================================"
-          echo "Checking actual YTUHD files"
-          echo "========================================"
+          echo "Verifying required YTUHD files..."
 
           test -f vendor/libvpx/vpx/vpx_decoder.h
           test -f vendor/dav1d/include/dav1d/dav1d.h
@@ -616,7 +557,7 @@ jobs:
           echo "YTUHD path patch complete."
 
       # ============================================================
-      # Diagnostic: show the exact paths that should be sent to clang
+      # Confirm codec headers resolve with clang
       # ============================================================
 
       - name: Verify YTUHD Include Paths
@@ -630,7 +571,6 @@ jobs:
           echo "Expected YTUHD compiler include paths"
           echo "========================================"
 
-          echo ""
           echo "-I${YTUHD_DIR}/vendor/libvpx"
           echo "-I${YTUHD_DIR}/vendor/libvpx_ios"
           echo "-I${YTUHD_DIR}/vendor/dav1d/include"
@@ -638,7 +578,7 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "Testing headers with clang preprocessor"
+          echo "Testing vpx header"
           echo "========================================"
 
           printf '#include <vpx/vpx_decoder.h>\n' > /tmp/test_vpx.m
@@ -652,6 +592,11 @@ jobs:
             >/dev/null
 
           echo "PASS: vpx/vpx_decoder.h resolved."
+
+          echo ""
+          echo "========================================"
+          echo "Testing dav1d header"
+          echo "========================================"
 
           printf '#include <dav1d/dav1d.h>\n' > /tmp/test_dav1d.m
 
@@ -667,7 +612,7 @@ jobs:
           echo "PASS: dav1d/dav1d.h resolved."
 
       # ============================================================
-      # Build uYouEnhanced
+      # Build package
       # ============================================================
 
       - name: Fix compiling & Build Package
@@ -697,25 +642,12 @@ jobs:
           echo "Starting uYouEnhanced build"
           echo "========================================"
 
-          echo ""
-          echo "SDK Version:"
-          echo "${{ inputs.sdk_version }}"
-
-          echo ""
-          echo "Bundle ID:"
-          echo "${{ inputs.bundle_id }}"
-
-          echo ""
-          echo "App Name:"
-          echo "${{ inputs.app_name }}"
-
-          echo ""
-          echo "YTUHD_ENABLED:"
-          echo "${{ inputs.ytuhd && '1' || '0' }}"
-
-          echo ""
-          echo "SPONSORBLOCK_ENABLED:"
-          echo "${{ inputs.sponsorblock && '1' || '0' }}"
+          echo "THEOS=$THEOS"
+          echo "SDK=${{ inputs.sdk_version }}"
+          echo "Bundle ID=${{ inputs.bundle_id }}"
+          echo "App Name=${{ inputs.app_name }}"
+          echo "YTUHD_ENABLED=${{ inputs.ytuhd && '1' || '0' }}"
+          echo "SPONSORBLOCK_ENABLED=${{ inputs.sponsorblock && '1' || '0' }}"
 
           echo ""
           echo "========================================"
@@ -737,14 +669,12 @@ jobs:
           PACKAGE_FILE="$(ls -t packages | head -n1)"
 
           echo "Package: $PACKAGE_FILE"
-
           echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
         env:
-          THEOS: ${{ github.workspace }}/theos
           UYOU_VERSION: ${{ inputs.uyou_version }}
 
       # ============================================================
-      # Open in YouTube Safari Extension
+      # Safari extension
       # ============================================================
 
       - name: Clone Open in YouTube (Safari Extension)
@@ -770,7 +700,7 @@ jobs:
           mv *.appex ..
 
       # ============================================================
-      # SideStore extension bundle IDs
+      # Normalize extension bundle IDs
       # ============================================================
 
       - name: Normalize Extension Bundle ID for SideStore
@@ -807,7 +737,6 @@ jobs:
             fi
 
             if [[ "$CURRENT_ID" == "$ORIG_PREFIX"* ]]; then
-
               SUFFIX="${CURRENT_ID#${ORIG_PREFIX}.}"
 
               if [ "$SUFFIX" = "$CURRENT_ID" ]; then
@@ -829,21 +758,16 @@ jobs:
                 -c "Add :CFBundleIdentifier string $NEW_ID" \
                 "$PLIST_PATH" \
                 || true
-
             else
-
               echo ""
               echo "Skipping $PLIST_PATH"
               echo "Current ID does not start with $ORIG_PREFIX:"
               echo "$CURRENT_ID"
-
             fi
           }
 
           for appex in *.appex; do
-
             if [ -d "$appex" ]; then
-
               PLIST="$appex/Info.plist"
 
               update_plist_id "$PLIST"
@@ -864,9 +788,6 @@ jobs:
                     if grep -q "$ORIG_PREFIX" "$f" >/dev/null 2>&1; then
                       echo "Found original prefix in: $f"
                     fi
-
                   done
-
             fi
-
           done
