@@ -770,7 +770,7 @@ jobs:
 
       - name: Upload IPA Artifact
         if: ${{ inputs.upload_artifact }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: uYouEnhanced_${{ steps.prepare_youtube.outputs.youtube_version }}_${{ inputs.uyou_version }}_run-${{ github.run_number }}
           path: ${{ steps.final_ipa.outputs.path }}
@@ -784,7 +784,7 @@ jobs:
 
       - name: Create Draft Release
         if: ${{ inputs.create_release }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.prepare_youtube.outputs.youtube_version }}-${{ inputs.uyou_version }}-${{ github.run_number }}
           name: uYouEnhanced ${{ steps.prepare_youtube.outputs.youtube_version }}-${{ inputs.uyou_version }} (Run ${{ github.run_number }})
